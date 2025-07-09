@@ -135,7 +135,7 @@ class AdaptationCheckView(discord.ui.View):
             pass
 
     @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
-    async def preserve_button(self, interaction: interaction: discord.Interaction, button: discord.ui.Button):
+    async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         member_name = interaction.channel.name.replace("환영-", "")
         member = discord.utils.get(interaction.guild.members, name=member_name)
         if not member:
