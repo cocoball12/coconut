@@ -47,6 +47,8 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 processing_members = set()
 member_join_history = {}  # {user_id: [join_timestamps]}
 channel_creation_lock = asyncio.Lock()
+# 채널 생성 추적을 위한 추가 변수
+creating_channels = set()  # 현재 생성 중인 채널 이름들
 
 def get_clean_name(display_name):
     return re.sub(r'^\((?:단팥빵|메론빵)\)\s*', '', display_name).strip()
@@ -133,25 +135,29 @@ async def change_nickname_with_gender_prefix(member):
             new_nickname = f"{prefix} {truncated_name}"
             print(f"닉네임이 너무 길어서 줄임: {new_nickname}")
         
-        # 봇의 권한 확인
+        # 봇의 권한 확인 - 개선된 로직
         bot_permissions = member.guild.me.guild_permissions
         print(f"봇 권한 - 닉네임 관리: {bot_permissions.manage_nicknames}")
         print(f"봇 권한 - 관리자: {bot_permissions.administrator}")
         
-        if not bot_permissions.manage_nicknames and not bot_permissions.administrator:
+        # 관리자 권한이 있으면 닉네임 변경 가능
+        if bot_permissions.administrator:
+            print("✅ 봇이 관리자 권한을 가지고 있음")
+        elif not bot_permissions.manage_nicknames:
             print("❌ 봇에게 닉네임 관리 권한이 없습니다.")
             return "no_permission"
         
-        # 역할 순위 확인
-        bot_top_role = member.guild.me.top_role
-        member_top_role = member.top_role
-        
-        print(f"봇 최고 역할: {bot_top_role.name} (위치: {bot_top_role.position})")
-        print(f"멤버 최고 역할: {member_top_role.name} (위치: {member_top_role.position})")
-        
-        if member_top_role >= bot_top_role:
-            print(f"❌ {member.name}님의 역할이 봇보다 높거나 같아서 닉네임 변경 불가")
-            return "higher_role"
+        # 역할 순위 확인 - 관리자 권한이 있으면 스킵
+        if not bot_permissions.administrator:
+            bot_top_role = member.guild.me.top_role
+            member_top_role = member.top_role
+            
+            print(f"봇 최고 역할: {bot_top_role.name} (위치: {bot_top_role.position})")
+            print(f"멤버 최고 역할: {member_top_role.name} (위치: {member_top_role.position})")
+            
+            if member_top_role >= bot_top_role:
+                print(f"❌ {member.name}님의 역할이 봇보다 높거나 같아서 닉네임 변경 불가")
+                return "higher_role"
         
         # 닉네임 변경 시도
         print(f"닉네임 변경 시도: {member.display_name} -> {new_nickname}")
@@ -333,6 +339,7 @@ async def on_ready():
         print(f"  - 채널 관리: {permissions.manage_channels}")
         print(f"  - 역할 관리: {permissions.manage_roles}")
         print(f"  - 메시지 관리: {permissions.manage_messages}")
+        print(f"  - 관리자: {permissions.administrator}")
     
     print("Render 배포 성공!")
 
@@ -348,32 +355,37 @@ async def on_member_join(member):
     if is_returning_member:
         await notify_admin_rejoin(member.guild, member)
     
+    # 고유한 채널 식별자 생성
+    channel_name = f"환영-{member.name}"
+    unique_identifier = f"{member.id}_{member.guild.id}"
+    
     # 채널 생성 락 사용하여 중복 생성 방지
     async with channel_creation_lock:
         # 이미 처리 중인 멤버인지 확인
-        if member.id in processing_members:
+        if unique_identifier in processing_members:
             print(f"이미 처리 중인 멤버: {member.name}")
             return
         
-        processing_members.add(member.id)
+        # 현재 생성 중인 채널인지 확인
+        if channel_name in creating_channels:
+            print(f"이미 생성 중인 채널: {channel_name}")
+            return
+        
+        # 기존 채널 확인
+        existing_channel = discord.utils.get(member.guild.channels, name=channel_name)
+        if existing_channel:
+            print(f"이미 존재하는 채널: {channel_name}")
+            return
+        
+        # 처리 시작 표시
+        processing_members.add(unique_identifier)
+        creating_channels.add(channel_name)
         
         try:
             guild = member.guild
             settings = MESSAGES["settings"]
             
             print(f"새 멤버 입장: {member.name} (ID: {member.id}) - 재입장: {is_returning_member}")
-
-            channel_name = f"환영-{member.name}"
-            
-            # 기존 채널 확인 - 더 엄격하게
-            existing_channels = [
-                ch for ch in guild.channels 
-                if ch.name.lower() == channel_name.lower() and isinstance(ch, discord.TextChannel)
-            ]
-            
-            if existing_channels:
-                print(f"이미 존재하는 채널 발견: {channel_name}")
-                return
 
             # 환영 카테고리 확인/생성
             welcome_cat = discord.utils.get(guild.categories, name=settings["welcome_category"])
@@ -406,12 +418,6 @@ async def on_member_join(member):
             doradori_role = discord.utils.get(guild.roles, name="도라도라미")
             if doradori_role:
                 overwrites[doradori_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            
-            # 채널 생성 직전 마지막 중복 확인
-            final_check = discord.utils.get(guild.channels, name=channel_name)
-            if final_check:
-                print(f"채널 생성 직전 중복 발견: {channel_name}")
-                return
             
             # 환영 채널 생성
             welcome_channel = await guild.create_text_channel(
@@ -471,7 +477,8 @@ async def on_member_join(member):
             traceback.print_exc()
         finally:
             # 처리 완료 후 제거
-            processing_members.discard(member.id)
+            processing_members.discard(unique_identifier)
+            creating_channels.discard(channel_name)
 
 @bot.event
 async def on_member_remove(member):
@@ -481,6 +488,7 @@ async def on_member_remove(member):
     try:
         guild = member.guild
         channel_name = f"환영-{member.name}"
+        unique_identifier = f"{member.id}_{guild.id}"
         
         welcome_channel = discord.utils.get(guild.channels, name=channel_name)
         if welcome_channel:
@@ -488,7 +496,8 @@ async def on_member_remove(member):
             print(f"멤버 퇴장으로 환영 채널 삭제: {channel_name}")
             
         # 처리 중인 멤버 목록에서도 제거
-        processing_members.discard(member.id)
+        processing_members.discard(unique_identifier)
+        creating_channels.discard(channel_name)
         
     except Exception as e:
         print(f"멤버 퇴장 시 채널 삭제 오류: {e}")
@@ -505,14 +514,17 @@ async def status(ctx):
     embed.add_field(name="멤버 수", value=guild.member_count, inline=True)
     embed.add_field(name="채널 수", value=len(guild.channels), inline=True)
     embed.add_field(name="현재 처리 중인 멤버", value=len(processing_members), inline=True)
+    embed.add_field(name="생성 중인 채널", value=len(creating_channels), inline=True)
     embed.add_field(name="봇 지연시간", value=f"{round(bot.latency * 1000)}ms", inline=True)
     embed.add_field(name="배포 플랫폼", value="Render", inline=True)
     embed.add_field(name="입장 기록", value=f"{len(member_join_history)}개 저장됨", inline=True)
     
     # 봇 권한 정보 추가
     permissions = guild.me.guild_permissions
-    perm_status = "✅" if permissions.manage_nicknames else "❌"
-    embed.add_field(name="닉네임 관리 권한", value=perm_status, inline=True)
+    admin_status = "✅" if permissions.administrator else "❌"
+    nickname_status = "✅" if permissions.manage_nicknames else "❌"
+    embed.add_field(name="관리자 권한", value=admin_status, inline=True)
+    embed.add_field(name="닉네임 관리 권한", value=nickname_status, inline=True)
     
     await ctx.send(embed=embed)
 
@@ -545,89 +557,3 @@ async def join_history(ctx, user_id: int = None):
         time_str = discord.utils.format_dt(discord.utils.snowflake_time(int(timestamp * 1000)), style='F')
         embed.add_field(
             name=f"{i}번째 입장",
-            value=time_str,
-            inline=False
-        )
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="권한체크")
-async def check_permissions(ctx, member: discord.Member = None):
-    """멤버의 권한을 체크하는 명령어 (관리자 전용)"""
-    # 도라도라미 역할 확인
-    doradori_role = discord.utils.get(ctx.guild.roles, name="도라도라미")
-    if not doradori_role or doradori_role not in ctx.author.roles:
-        await ctx.send("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.")
-        return
-    
-    if member is None:
-        member = ctx.author
-    
-    embed = discord.Embed(
-        title="🔍 권한 체크",
-        description=f"{member.mention}님의 권한 정보",
-        color=0x3498db
-    )
-    
-    # 봇의 권한 vs 멤버의 권한
-    bot_top_role = ctx.guild.me.top_role
-    member_top_role = member.top_role
-    
-    embed.add_field(
-        name="역할 비교",
-        value=f"봇 최고 역할: {bot_top_role.name} (위치: {bot_top_role.position})\n"
-              f"멤버 최고 역할: {member_top_role.name} (위치: {member_top_role.position})",
-        inline=False
-    )
-    
-    can_edit = member_top_role < bot_top_role
-    embed.add_field(
-        name="닉네임 변경 가능 여부",
-        value="✅ 가능" if can_edit else "❌ 불가능",
-        inline=True
-    )
-    
-    # 성별 역할 확인
-    male_role = discord.utils.get(ctx.guild.roles, name="남자")
-    female_role = discord.utils.get(ctx.guild.roles, name="여자")
-    
-    gender_roles = []
-    if male_role and male_role in member.roles:
-        gender_roles.append("남자")
-    if female_role and female_role in member.roles:
-        gender_roles.append("여자")
-    
-    embed.add_field(
-        name="성별 역할",
-        value=", ".join(gender_roles) if gender_roles else "없음",
-        inline=True
-    )
-    
-    # 현재 닉네임 상태
-    embed.add_field(
-        name="현재 닉네임",
-        value=f"{member.display_name}\n접두사 있음: {'✅' if has_gender_prefix(member.display_name) else '❌'}",
-        inline=True
-    )
-    
-    await ctx.send(embed=embed)
-
-# 메인 실행부
-if __name__ == "__main__":
-    # Flask 서버를 별도 스레드에서 실행 (Render 웹 서비스용)
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Discord 봇 실행
-    token = os.getenv("DISCORD_TOKEN")
-    if not token:
-        print("❌ DISCORD_TOKEN 환경 변수가 설정되지 않았습니다.")
-        print("Render 대시보드에서 환경 변수를 확인해주세요.")
-        exit(1)
-    
-    try:
-        bot.run(token)
-    except Exception as e:
-        print(f"봇 실행 중 오류 발생: {e}")
-        exit(1)
