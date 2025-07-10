@@ -266,17 +266,19 @@ async def on_member_join(member):
                 welcome_cat = await guild.create_category(settings["welcome_category"])
                 print(f"환영 카테고리 생성: {settings['welcome_category']}")
 
-            # 다른 채널들에 대한 접근 권한 제거
+            # 모든 채널들에 대한 접근 권한 설정
             for channel in guild.channels:
                 if channel.category and channel.category.name == settings["welcome_category"]:
                     continue
                 try:
                     if isinstance(channel, discord.TextChannel):
-                        await channel.set_permissions(member, read_messages=False)
+                        # 텍스트 채널은 완전히 차단
+                        await channel.set_permissions(member, read_messages=False, send_messages=False)
                     elif isinstance(channel, discord.VoiceChannel):
-                        await channel.set_permissions(member, view_channel=True, connect=True)
-                except:
-                    pass
+                        # 음성 채널은 보이고 접속 가능하도록 설정
+                        await channel.set_permissions(member, view_channel=True, connect=True, speak=True)
+                except Exception as e:
+                    print(f"채널 권한 설정 오류 ({channel.name}): {e}")
 
             # 환영 채널 권한 설정
             overwrites = {
