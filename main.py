@@ -53,8 +53,8 @@ async def change_nickname_with_gender_prefix(member):
     try:
         if has_gender_prefix(member.display_name):
             return "already_has_prefix"
-        male = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["male_role_name"])
-        female = discord.utils.get(member.guild.roles, name=MESSAGES["settings"]["female_role_name"])
+        male = discord.utils.get(member.guild.roles, name="남자")
+        female = discord.utils.get(member.guild.roles, name="여자")
         name = get_clean_name(member.display_name)
         if male in member.roles:
             await member.edit(nick=f"{MESSAGES['settings']['male_prefix']} {name}")
@@ -149,7 +149,7 @@ class AdaptationCheckView(discord.ui.View):
         elif result == "already_has_prefix":
             msg += "이미 접두사가 포함된 닉네임입니다.\n"
         elif result == "no_gender_role":
-            msg += "⚠️ 성별 역할(단팥빵/메론빵)이 없어서 닉네임 변경을 건너뜁니다.\n"
+            msg += "⚠️ 성별 역할(남자/여자)이 없어서 닉네임 변경을 건너뜁니다.\n"
         else:
             msg += f"❌ 닉네임 변경에 실패했습니다.\n"
 
