@@ -78,34 +78,92 @@ def is_rejoin(user_id, guild_id):
 
 async def change_nickname_with_gender_prefix(member):
     try:
+        # 이미 접두사가 있는지 확인
         if has_gender_prefix(member.display_name):
             return "already_has_prefix"
+        
+        # 성별 역할 가져오기
         male = discord.utils.get(member.guild.roles, name="남자")
         female = discord.utils.get(member.guild.roles, name="여자")
-        name = get_clean_name(member.display_name)
-        if male in member.roles:
-            await member.edit(nick=f"{MESSAGES['settings']['male_prefix']} {name}")
-            return "male"
-        elif female in member.roles:
-            await member.edit(nick=f"{MESSAGES['settings']['female_prefix']} {name}")
-            return "female"
-        return "no_gender_role"
+        
+        # 깨끗한 이름 가져오기
+        clean_name = get_clean_name(member.display_name)
+        
+        # 새 닉네임 생성
+        new_nickname = None
+        gender_type = None
+        
+        if male and male in member.roles:
+            prefix = MESSAGES['settings']['male_prefix']
+            new_nickname = f"{prefix} {clean_name}"
+            gender_type = "male"
+        elif female and female in member.roles:
+            prefix = MESSAGES['settings']['female_prefix']
+            new_nickname = f"{prefix} {clean_name}"
+            gender_type = "female"
+        else:
+            return "no_gender_role"
+        
+        # 닉네임 길이 확인 (Discord 제한: 32자)
+        if len(new_nickname) > 32:
+            # 너무 길면 이름을 줄임
+            prefix = MESSAGES['settings'][f'{gender_type}_prefix']
+            max_name_length = 32 - len(f"{prefix} ")
+            truncated_name = clean_name[:max_name_length].strip()
+            new_nickname = f"{prefix} {truncated_name}"
+            print(f"닉네임이 너무 길어서 줄임: {new_nickname}")
+        
+        # 봇의 권한 확인
+        if not member.guild.me.guild_permissions.manage_nicknames:
+            print("❌ 봇에게 닉네임 관리 권한이 없습니다.")
+            return "no_permission"
+        
+        # 대상 멤버의 역할 순위 확인 (봇보다 높은 권한을 가진 멤버는 닉네임 변경 불가)
+        if member.top_role >= member.guild.me.top_role:
+            print(f"❌ {member.name}님의 역할이 봇보다 높거나 같아서 닉네임 변경 불가")
+            return "higher_role"
+        
+        # 닉네임 변경 시도
+        await member.edit(nick=new_nickname)
+        print(f"✅ 닉네임 변경 성공: {member.name} -> {new_nickname}")
+        return gender_type
+        
+    except discord.Forbidden:
+        print(f"❌ 권한 부족으로 닉네임 변경 실패: {member.name}")
+        return "forbidden"
+    except discord.HTTPException as e:
+        print(f"❌ HTTP 오류로 닉네임 변경 실패: {e}")
+        return "http_error"
     except Exception as e:
-        print(f"닉네임 변경 오류: {e}")
+        print(f"❌ 닉네임 변경 중 예상치 못한 오류: {e}")
         return "error"
 
 async def grant_all_channel_access(member):
     try:
+        success_count = 0
+        error_count = 0
+        
         for channel in member.guild.channels:
+            # 환영 카테고리는 건너뛰기
             if channel.category and channel.category.name == MESSAGES["settings"]["welcome_category"]:
                 continue
-            if isinstance(channel, discord.TextChannel):
-                await channel.set_permissions(member, read_messages=True, send_messages=True)
-            elif isinstance(channel, discord.VoiceChannel):
-                await channel.set_permissions(member, view_channel=True, connect=True)
-        return True
+            
+            try:
+                if isinstance(channel, discord.TextChannel):
+                    await channel.set_permissions(member, read_messages=True, send_messages=True)
+                    success_count += 1
+                elif isinstance(channel, discord.VoiceChannel):
+                    await channel.set_permissions(member, view_channel=True, connect=True)
+                    success_count += 1
+            except Exception as e:
+                print(f"채널 접근 권한 부여 오류 ({channel.name}): {e}")
+                error_count += 1
+        
+        print(f"채널 권한 부여 결과 - 성공: {success_count}, 실패: {error_count}")
+        return success_count > 0
+        
     except Exception as e:
-        print(f"채널 접근 권한 부여 오류: {e}")
+        print(f"전체 채널 접근 권한 부여 오류: {e}")
         return False
 
 async def notify_admin_rejoin(guild, member):
@@ -203,14 +261,24 @@ class AdaptationCheckView(discord.ui.View):
         elif result == "female":
             msg += f"👧 {get_clean_name(member.display_name)} 님의 닉네임에 메론빵 접두사가 추가되었습니다.\n"
         elif result == "already_has_prefix":
-            msg += "이미 접두사가 포함된 닉네임입니다.\n"
+            msg += "✅ 이미 접두사가 포함된 닉네임입니다.\n"
         elif result == "no_gender_role":
             msg += "⚠️ 성별 역할(남자/여자)이 없어서 닉네임 변경을 건너뜁니다.\n"
+        elif result == "no_permission":
+            msg += "❌ 봇에게 닉네임 관리 권한이 없습니다.\n"
+        elif result == "higher_role":
+            msg += "❌ 회원님의 역할이 봇보다 높아서 닉네임 변경이 불가능합니다.\n"
+        elif result == "forbidden":
+            msg += "❌ 권한 부족으로 닉네임 변경에 실패했습니다.\n"
+        elif result == "http_error":
+            msg += "❌ 네트워크 오류로 닉네임 변경에 실패했습니다.\n"
         else:
-            msg += f"❌ 닉네임 변경에 실패했습니다.\n"
+            msg += f"❌ 닉네임 변경에 실패했습니다. (오류: {result})\n"
 
         if access:
             msg += "✅ 모든 채널 접근 권한이 부여되었습니다.\n"
+        else:
+            msg += "⚠️ 일부 채널 접근 권한 부여에 실패했을 수 있습니다.\n"
 
         msg += "🎉 환영 과정이 완료되었습니다!"
         await interaction.response.send_message(msg, ephemeral=True)
@@ -219,6 +287,16 @@ class AdaptationCheckView(discord.ui.View):
 async def on_ready():
     print(f"봇 로그인됨: {bot.user}")
     print(f"봇이 {len(bot.guilds)}개의 서버에 연결되었습니다.")
+    
+    # 봇의 권한 확인
+    for guild in bot.guilds:
+        permissions = guild.me.guild_permissions
+        print(f"서버 '{guild.name}'에서의 봇 권한:")
+        print(f"  - 닉네임 관리: {permissions.manage_nicknames}")
+        print(f"  - 채널 관리: {permissions.manage_channels}")
+        print(f"  - 역할 관리: {permissions.manage_roles}")
+        print(f"  - 메시지 관리: {permissions.manage_messages}")
+    
     print("Render 배포 성공!")
 
 @bot.event
@@ -394,6 +472,11 @@ async def status(ctx):
     embed.add_field(name="배포 플랫폼", value="Render", inline=True)
     embed.add_field(name="입장 기록", value=f"{len(member_join_history)}개 저장됨", inline=True)
     
+    # 봇 권한 정보 추가
+    permissions = guild.me.guild_permissions
+    perm_status = "✅" if permissions.manage_nicknames else "❌"
+    embed.add_field(name="닉네임 관리 권한", value=perm_status, inline=True)
+    
     await ctx.send(embed=embed)
 
 @bot.command(name="입장기록")
@@ -402,7 +485,7 @@ async def join_history(ctx, user_id: int = None):
     # 도라도라미 역할 확인
     doradori_role = discord.utils.get(ctx.guild.roles, name="도라도라미")
     if not doradori_role or doradori_role not in ctx.author.roles:
-        await ctx.send("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.", ephemeral=True)
+        await ctx.send("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.")
         return
     
     if user_id is None:
@@ -428,6 +511,67 @@ async def join_history(ctx, user_id: int = None):
             value=time_str,
             inline=False
         )
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name="권한체크")
+async def check_permissions(ctx, member: discord.Member = None):
+    """멤버의 권한을 체크하는 명령어 (관리자 전용)"""
+    # 도라도라미 역할 확인
+    doradori_role = discord.utils.get(ctx.guild.roles, name="도라도라미")
+    if not doradori_role or doradori_role not in ctx.author.roles:
+        await ctx.send("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.")
+        return
+    
+    if member is None:
+        member = ctx.author
+    
+    embed = discord.Embed(
+        title="🔍 권한 체크",
+        description=f"{member.mention}님의 권한 정보",
+        color=0x3498db
+    )
+    
+    # 봇의 권한 vs 멤버의 권한
+    bot_top_role = ctx.guild.me.top_role
+    member_top_role = member.top_role
+    
+    embed.add_field(
+        name="역할 비교",
+        value=f"봇 최고 역할: {bot_top_role.name} (위치: {bot_top_role.position})\n"
+              f"멤버 최고 역할: {member_top_role.name} (위치: {member_top_role.position})",
+        inline=False
+    )
+    
+    can_edit = member_top_role < bot_top_role
+    embed.add_field(
+        name="닉네임 변경 가능 여부",
+        value="✅ 가능" if can_edit else "❌ 불가능",
+        inline=True
+    )
+    
+    # 성별 역할 확인
+    male_role = discord.utils.get(ctx.guild.roles, name="남자")
+    female_role = discord.utils.get(ctx.guild.roles, name="여자")
+    
+    gender_roles = []
+    if male_role and male_role in member.roles:
+        gender_roles.append("남자")
+    if female_role and female_role in member.roles:
+        gender_roles.append("여자")
+    
+    embed.add_field(
+        name="성별 역할",
+        value=", ".join(gender_roles) if gender_roles else "없음",
+        inline=True
+    )
+    
+    # 현재 닉네임 상태
+    embed.add_field(
+        name="현재 닉네임",
+        value=f"{member.display_name}\n접두사 있음: {'✅' if has_gender_prefix(member.display_name) else '❌'}",
+        inline=True
+    )
     
     await ctx.send(embed=embed)
 
