@@ -308,9 +308,15 @@ async def on_member_join(member):
 
             # 첫 번째 환영 메시지
             welcome = MESSAGES["welcome_messages"]["initial_welcome"]
+            
+            # 재입장 시 설명 텍스트 추가
+            description = welcome["description"]
+            if is_returning_member:
+                description += "\n\n🔄 **재입장 하셨습니다!**\n이전에 서버에 계신 적이 있으시군요! 다시 돌아와 주셔서 감사합니다."
+            
             embed1 = discord.Embed(
                 title=f"{'🔄 ' if is_returning_member else ''}서버에 {'다시 ' if is_returning_member else ''}오신 걸 환영합니다!",
-                description=welcome["description"], 
+                description=description, 
                 color=int(welcome["color"], 16)
             )
             embed1.add_field(
@@ -318,13 +324,6 @@ async def on_member_join(member):
                 value=welcome.get("field_value", "서버 규칙을 확인해주세요!"), 
                 inline=False
             )
-            
-            if is_returning_member:
-                embed1.add_field(
-                    name="🔄 재입장 안내",
-                    value="이전에 서버에 계신 적이 있으시군요! 다시 돌아와 주셔서 감사합니다.",
-                    inline=False
-                )
             
             embed1.set_footer(text=f"환영합니다, {member.name}님!")
             
