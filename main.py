@@ -182,9 +182,11 @@ async def on_member_join(member):
 
         channel_name = f"환영-{member.name}"
         
-        existing_channels = [ch for ch in guild.channels if ch.name == channel_name]
+        # 기존 채널 확인을 더 철저히 함
+        existing_channels = [ch for ch in guild.channels if ch.name == channel_name and isinstance(ch, discord.TextChannel)]
         if existing_channels:
             print(f"이미 존재하는 채널: {channel_name}")
+            processing_members.discard(member.id)
             return
 
         welcome_cat = discord.utils.get(guild.categories, name=settings["welcome_category"])
@@ -208,6 +210,13 @@ async def on_member_join(member):
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             member: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
+        
+        # 채널 생성 전에 다시 한번 확인
+        double_check = discord.utils.get(guild.channels, name=channel_name)
+        if double_check:
+            print(f"채널 생성 직전 중복 발견: {channel_name}")
+            processing_members.discard(member.id)
+            return
         
         welcome_channel = await guild.create_text_channel(
             channel_name, 
