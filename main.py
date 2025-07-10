@@ -119,9 +119,9 @@ class AdaptationCheckView(discord.ui.View):
         self.member_id = member_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        doradori_role = discord.utils.get(interaction.guild.roles, name="도라도라미")
-        if not doradori_role or doradori_role not in interaction.user.roles:
-            await interaction.response.send_message("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.", ephemeral=True)
+        # 본인만 버튼을 누를 수 있도록 체크
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message("❌ 본인만 이 버튼을 사용할 수 있습니다.", ephemeral=True)
             return False
         return True
 
@@ -136,12 +136,8 @@ class AdaptationCheckView(discord.ui.View):
 
     @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
     async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member_name = interaction.channel.name.replace("환영-", "")
-        member = discord.utils.get(interaction.guild.members, name=member_name)
-        if not member:
-            await interaction.response.send_message("❌ 해당 멤버를 찾을 수 없습니다.", ephemeral=True)
-            return
-
+        member = interaction.user  # 본인이 버튼을 누르므로 interaction.user 사용
+        
         result = await change_nickname_with_gender_prefix(member)
         access = await grant_all_channel_access(member)
 
@@ -241,7 +237,7 @@ async def on_member_join(member):
             description=adaptation["description"].format(member_mention=member.mention), 
             color=int(adaptation["color"], 16)
         )
-        embed2.add_field(name=adaptation["field_name"], value=adaptation["field_value"], inline=False)
+        embed2.add_field(name=adaptation["field_name"], value="이 버튼은 본인만 사용할 수 있습니다.", inline=False)
         embed2.set_footer(text="서버 적응 상태를 확인해주세요!")
         
         await welcome_channel.send(embed=embed2, view=AdaptationCheckView(member.id))
