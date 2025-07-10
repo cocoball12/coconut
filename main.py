@@ -78,16 +78,33 @@ def is_rejoin(user_id, guild_id):
 
 async def change_nickname_with_gender_prefix(member):
     try:
+        print(f"=== 닉네임 변경 시도 시작 ===")
+        print(f"대상: {member.name} (ID: {member.id})")
+        print(f"현재 닉네임: {member.display_name}")
+        print(f"서버 소유자: {member.guild.owner}")
+        print(f"멤버가 서버 소유자인가: {member.id == member.guild.owner_id}")
+        
+        # 서버 소유자는 닉네임 변경 불가
+        if member.id == member.guild.owner_id:
+            print("❌ 서버 소유자의 닉네임은 변경할 수 없습니다.")
+            return "server_owner"
+        
         # 이미 접두사가 있는지 확인
         if has_gender_prefix(member.display_name):
+            print("✅ 이미 접두사가 있음")
             return "already_has_prefix"
         
         # 성별 역할 가져오기
         male = discord.utils.get(member.guild.roles, name="남자")
         female = discord.utils.get(member.guild.roles, name="여자")
         
+        print(f"남자 역할: {male}")
+        print(f"여자 역할: {female}")
+        print(f"멤버 역할: {[role.name for role in member.roles]}")
+        
         # 깨끗한 이름 가져오기
         clean_name = get_clean_name(member.display_name)
+        print(f"깨끗한 이름: {clean_name}")
         
         # 새 닉네임 생성
         new_nickname = None
@@ -97,11 +114,14 @@ async def change_nickname_with_gender_prefix(member):
             prefix = MESSAGES['settings']['male_prefix']
             new_nickname = f"{prefix} {clean_name}"
             gender_type = "male"
+            print(f"남자 역할 확인 - 새 닉네임: {new_nickname}")
         elif female and female in member.roles:
             prefix = MESSAGES['settings']['female_prefix']
             new_nickname = f"{prefix} {clean_name}"
             gender_type = "female"
+            print(f"여자 역할 확인 - 새 닉네임: {new_nickname}")
         else:
+            print("❌ 성별 역할이 없음")
             return "no_gender_role"
         
         # 닉네임 길이 확인 (Discord 제한: 32자)
@@ -114,28 +134,43 @@ async def change_nickname_with_gender_prefix(member):
             print(f"닉네임이 너무 길어서 줄임: {new_nickname}")
         
         # 봇의 권한 확인
-        if not member.guild.me.guild_permissions.manage_nicknames:
+        bot_permissions = member.guild.me.guild_permissions
+        print(f"봇 권한 - 닉네임 관리: {bot_permissions.manage_nicknames}")
+        print(f"봇 권한 - 관리자: {bot_permissions.administrator}")
+        
+        if not bot_permissions.manage_nicknames and not bot_permissions.administrator:
             print("❌ 봇에게 닉네임 관리 권한이 없습니다.")
             return "no_permission"
         
-        # 대상 멤버의 역할 순위 확인 (봇보다 높은 권한을 가진 멤버는 닉네임 변경 불가)
-        if member.top_role >= member.guild.me.top_role:
+        # 역할 순위 확인
+        bot_top_role = member.guild.me.top_role
+        member_top_role = member.top_role
+        
+        print(f"봇 최고 역할: {bot_top_role.name} (위치: {bot_top_role.position})")
+        print(f"멤버 최고 역할: {member_top_role.name} (위치: {member_top_role.position})")
+        
+        if member_top_role >= bot_top_role:
             print(f"❌ {member.name}님의 역할이 봇보다 높거나 같아서 닉네임 변경 불가")
             return "higher_role"
         
         # 닉네임 변경 시도
+        print(f"닉네임 변경 시도: {member.display_name} -> {new_nickname}")
         await member.edit(nick=new_nickname)
-        print(f"✅ 닉네임 변경 성공: {member.name} -> {new_nickname}")
+        print(f"✅ 닉네임 변경 성공!")
         return gender_type
         
-    except discord.Forbidden:
-        print(f"❌ 권한 부족으로 닉네임 변경 실패: {member.name}")
+    except discord.Forbidden as e:
+        print(f"❌ 권한 부족으로 닉네임 변경 실패: {e}")
         return "forbidden"
     except discord.HTTPException as e:
         print(f"❌ HTTP 오류로 닉네임 변경 실패: {e}")
+        print(f"HTTP 오류 코드: {e.status}")
+        print(f"HTTP 오류 메시지: {e.text}")
         return "http_error"
     except Exception as e:
         print(f"❌ 닉네임 변경 중 예상치 못한 오류: {e}")
+        import traceback
+        traceback.print_exc()
         return "error"
 
 async def grant_all_channel_access(member):
@@ -264,16 +299,18 @@ class AdaptationCheckView(discord.ui.View):
             msg += "✅ 이미 접두사가 포함된 닉네임입니다.\n"
         elif result == "no_gender_role":
             msg += "⚠️ 성별 역할(남자/여자)이 없어서 닉네임 변경을 건너뜁니다.\n"
+        elif result == "server_owner":
+            msg += "⚠️ 서버 소유자의 닉네임은 변경할 수 없습니다.\n"
         elif result == "no_permission":
-            msg += "❌ 봇에게 닉네임 관리 권한이 없습니다.\n"
+            msg += "❌ 봇에게 닉네임 관리 권한이 없습니다.\n서버 관리자에게 봇 권한을 확인해달라고 요청하세요.\n"
         elif result == "higher_role":
-            msg += "❌ 회원님의 역할이 봇보다 높아서 닉네임 변경이 불가능합니다.\n"
+            msg += "❌ 회원님의 역할이 봇보다 높아서 닉네임 변경이 불가능합니다.\n서버 관리자에게 봇 역할 위치를 조정해달라고 요청하세요.\n"
         elif result == "forbidden":
-            msg += "❌ 권한 부족으로 닉네임 변경에 실패했습니다.\n"
+            msg += "❌ 권한 부족으로 닉네임 변경에 실패했습니다.\n서버 관리자에게 봇 권한을 확인해달라고 요청하세요.\n"
         elif result == "http_error":
-            msg += "❌ 네트워크 오류로 닉네임 변경에 실패했습니다.\n"
+            msg += "❌ 네트워크 오류로 닉네임 변경에 실패했습니다.\n잠시 후 다시 시도해주세요.\n"
         else:
-            msg += f"❌ 닉네임 변경에 실패했습니다. (오류: {result})\n"
+            msg += f"❌ 닉네임 변경에 실패했습니다.\n오류 코드: {result}\n서버 관리자에게 문의하세요.\n"
 
         if access:
             msg += "✅ 모든 채널 접근 권한이 부여되었습니다.\n"
