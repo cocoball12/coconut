@@ -49,6 +49,8 @@ member_join_history = {}  # {user_id: [join_timestamps]}
 channel_creation_lock = asyncio.Lock()
 # 채널 생성 추적을 위한 추가 변수
 creating_channels = set()  # 현재 생성 중인 채널 이름들
+# 활동 추적을 위한 변수
+member_activity = {}  # {user_id: {'last_activity': timestamp, 'channel_id': channel_id}}
 
 def get_clean_name(display_name):
     return re.sub(r'^\((?:단팥빵|메론빵)\)\s*', '', display_name).strip()
@@ -210,9 +212,9 @@ async def grant_all_channel_access(member):
 async def notify_admin_rejoin(guild, member):
     """관리자에게 재입장 알림"""
     try:
-        # 도라도라미 역할을 가진 관리자들에게 DM 발송
-        doradori_role = discord.utils.get(guild.roles, name="도라도라미")
-        if not doradori_role:
+        # ㅇㄹㅇㄹ 역할을 가진 관리자들에게 DM 발송
+        admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
+        if not admin_role:
             return
         
         embed = discord.Embed(
@@ -225,7 +227,7 @@ async def notify_admin_rejoin(guild, member):
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
         
         # 관리자들에게 DM 발송
-        for admin in doradori_role.members:
+        for admin in admin_role.members:
             try:
                 await admin.send(embed=embed)
             except discord.Forbidden:
@@ -236,15 +238,169 @@ async def notify_admin_rejoin(guild, member):
     except Exception as e:
         print(f"재입장 알림 오류: {e}")
 
+async def send_second_guide_and_activity_check(member, welcome_channel):
+    """두 번째 안내문 전송 및 활동 체크 시작"""
+    try:
+        # 두 번째 안내문 전송
+        second_guide = MESSAGES["welcome_messages"]["second_guide"]
+        embed = discord.Embed(
+            title=second_guide["title"],
+            description=second_guide["description"],
+            color=int(second_guide["color"], 16)
+        )
+        
+        # 필드들 추가
+        for field in second_guide["fields"]:
+            embed.add_field(
+                name=field["name"],
+                value=field["value"],
+                inline=field["inline"]
+            )
+        
+        embed.set_footer(text=second_guide["footer"])
+        
+        # 적응 확인 버튼 추가
+        view = AdaptationCheckView(member.id)
+        await welcome_channel.send(embed=embed, view=view)
+        print(f"두 번째 안내문 전송 완료: {member.name}")
+        
+        # 활동 체크 시작 (10초 + 7초 + 15초 = 32초 시스템)
+        await check_member_activity(member.id, member.guild.id)
+        
+    except Exception as e:
+        print(f"두 번째 안내문 전송 오류: {e}")
+
+async def check_member_activity(member_id, guild_id):
+    """멤버 활동 체크 및 자동 강퇴 시스템"""
+    try:
+        guild = bot.get_guild(guild_id)
+        if not guild:
+            return
+        
+        member = guild.get_member(member_id)
+        if not member:
+            return
+        
+        # 10초 대기 후 첫 번째 알림
+        await asyncio.sleep(10)
+        
+        welcome_channel = discord.utils.get(guild.channels, name=f"환영-{member.name}")
+        if not welcome_channel:
+            return
+        
+        # 첫 번째 알림 - 적응 확인
+        embed1 = discord.Embed(
+            title="⏰ 적응 상태 확인",
+            description=f"{member.mention}님, 서버에 적응하고 계신가요?\n\n**적응 완료** 버튼을 눌러주세요!",
+            color=0xFFFF00
+        )
+        embed1.set_footer(text="버튼을 누르지 않으면 추가 알림이 발송됩니다.")
+        
+        await welcome_channel.send(embed=embed1)
+        print(f"첫 번째 알림 발송: {member.name}")
+        
+        # 7초 대기 후 두 번째 알림
+        await asyncio.sleep(7)
+        
+        # 멤버가 아직 있는지 확인
+        member = guild.get_member(member_id)
+        if not member:
+            return
+        
+        welcome_channel = discord.utils.get(guild.channels, name=f"환영-{member.name}")
+        if not welcome_channel:
+            return
+        
+        # 활동 확인 (메시지 전송, 음성 채널 참여 등)
+        has_activity = False
+        
+        # 최근 메시지 확인
+        async for message in welcome_channel.history(limit=10):
+            if message.author.id == member_id and message.created_at > discord.utils.utcnow() - discord.utils.timedelta(seconds=17):
+                has_activity = True
+                break
+        
+        # 음성 채널 활동 확인
+        if member.voice and member.voice.channel:
+            has_activity = True
+        
+        if not has_activity:
+            # 두 번째 알림 - 활동 없음 경고
+            embed2 = discord.Embed(
+                title="⚠️ 활동 없음 경고",
+                description=f"{member.mention}님, 채팅이나 음성 채널에서 활동이 감지되지 않았습니다.\n\n**15초 후 자동으로 강퇴됩니다.**\n\n지금 즉시 활동해주세요!",
+                color=0xFF0000
+            )
+            embed2.set_footer(text="채팅 또는 음성 채널 참여로 활동을 보여주세요.")
+            
+            await welcome_channel.send(embed=embed2)
+            print(f"두 번째 경고 발송: {member.name}")
+            
+            # 15초 대기 후 강퇴
+            await asyncio.sleep(15)
+            
+            # 다시 한 번 멤버 확인
+            member = guild.get_member(member_id)
+            if not member:
+                return
+            
+            # 최종 활동 확인
+            final_activity = False
+            
+            # 최근 메시지 확인 (총 32초 동안)
+            async for message in welcome_channel.history(limit=20):
+                if message.author.id == member_id and message.created_at > discord.utils.utcnow() - discord.utils.timedelta(seconds=32):
+                    final_activity = True
+                    break
+            
+            # 음성 채널 활동 확인
+            if member.voice and member.voice.channel:
+                final_activity = True
+            
+            if not final_activity:
+                # 강퇴 실행
+                try:
+                    await member.kick(reason="환영 과정에서 활동 없음으로 인한 자동 강퇴")
+                    print(f"자동 강퇴 완료: {member.name}")
+                    
+                    # 관리자에게 알림
+                    admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
+                    if admin_role:
+                        embed_kick = discord.Embed(
+                            title="🚫 자동 강퇴 알림",
+                            description=f"**{member.name}** (ID: {member_id})님이 활동 없음으로 자동 강퇴되었습니다.",
+                            color=0xFF0000,
+                            timestamp=discord.utils.utcnow()
+                        )
+                        embed_kick.add_field(name="강퇴 사유", value="환영 과정에서 32초간 활동 없음", inline=False)
+                        
+                        for admin in admin_role.members:
+                            try:
+                                await admin.send(embed=embed_kick)
+                            except:
+                                pass
+                    
+                except discord.Forbidden:
+                    print(f"강퇴 권한 없음: {member.name}")
+                except Exception as e:
+                    print(f"강퇴 오류: {e}")
+            else:
+                print(f"활동 감지됨, 강퇴 취소: {member.name}")
+        else:
+            print(f"초기 활동 감지됨: {member.name}")
+            
+    except Exception as e:
+        print(f"활동 체크 오류: {e}")
+
 class InitialWelcomeView(discord.ui.View):
     def __init__(self, member_id):
         super().__init__(timeout=None)
         self.member_id = member_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        doradori_role = discord.utils.get(interaction.guild.roles, name="도라도라미")
-        if not doradori_role or doradori_role not in interaction.user.roles:
-            await interaction.response.send_message("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.", ephemeral=True)
+        admin_role = discord.utils.get(interaction.guild.roles, name="ㅇㄹㅇㄹ")
+        if not admin_role or admin_role not in interaction.user.roles:
+            await interaction.response.send_message("❌ ㅇㄹㅇㄹ 역할이 있는 사람만 사용할 수 있습니다.", ephemeral=True)
             return False
         return True
 
@@ -289,8 +445,8 @@ class AdaptationCheckView(discord.ui.View):
         except:
             pass
 
-    @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
-    async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="적응 완료", style=discord.ButtonStyle.success, emoji="✅")
+    async def adaptation_complete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user  # 본인이 버튼을 누르므로 interaction.user 사용
         
         result = await change_nickname_with_gender_prefix(member)
@@ -339,6 +495,7 @@ async def on_ready():
         print(f"  - 채널 관리: {permissions.manage_channels}")
         print(f"  - 역할 관리: {permissions.manage_roles}")
         print(f"  - 메시지 관리: {permissions.manage_messages}")
+        print(f"  - 멤버 추방: {permissions.kick_members}")
         print(f"  - 관리자: {permissions.administrator}")
     
     print("Render 배포 성공!")
@@ -414,146 +571,104 @@ async def on_member_join(member):
                 member: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
             
-            # 도라도라미 역할에도 접근 권한 부여
-            doradori_role = discord.utils.get(guild.roles, name="도라도라미")
-            if doradori_role:
-                overwrites[doradori_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            
+           # 잘린 부분부터 이어서 작성
+
+            # ㅇㄹㅇㄹ 역할에도 접근 권한 부여
+            admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
+            if admin_role:
+                overwrites[admin_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
             # 환영 채널 생성
             welcome_channel = await guild.create_text_channel(
-                channel_name, 
-                overwrites=overwrites, 
+                channel_name,
                 category=welcome_cat,
-                topic=f"{member.name}님의 환영 채널 {'(재입장)' if is_returning_member else ''}"
+                overwrites=overwrites
             )
             
-            print(f"환영 채널 생성 완료: {welcome_channel.name}")
+            print(f"환영 채널 생성: {welcome_channel.name}")
 
-            # 첫 번째 환영 메시지
-            welcome = MESSAGES["welcome_messages"]["initial_welcome"]
+            # 첫 번째 안내문 전송
+            welcome_msg = MESSAGES["welcome_messages"]["first_guide"]
+            embed = discord.Embed(
+                title=welcome_msg["title"],
+                description=welcome_msg["description"].format(member=member.mention),
+                color=int(welcome_msg["color"], 16)
+            )
             
-            # 재입장 시 설명 텍스트 추가
-            description = welcome["description"]
+            # 필드들 추가
+            for field in welcome_msg["fields"]:
+                embed.add_field(
+                    name=field["name"],
+                    value=field["value"],
+                    inline=field["inline"]
+                )
+            
+            embed.set_footer(text=welcome_msg["footer"])
+            embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+            
+            # 재입장 알림 추가
             if is_returning_member:
-                description += "\n\n🔄 **재입장 하셨습니다!**\n이전에 서버에 계신 적이 있으시군요! 다시 돌아와 주셔서 감사합니다."
+                embed.add_field(
+                    name="🔄 재입장 알림", 
+                    value="이전에 서버에 참여했던 기록이 있습니다.", 
+                    inline=False
+                )
             
-            embed1 = discord.Embed(
-                title=f"{'🔄 ' if is_returning_member else ''}서버에 {'다시 ' if is_returning_member else ''}오신 걸 환영합니다!",
-                description=description, 
-                color=int(welcome["color"], 16)
-            )
-            embed1.add_field(
-                name="📋 서버 규칙", 
-                value=welcome.get("field_value", "서버 규칙을 확인해주세요!"), 
-                inline=False
-            )
+            # 관리자 버튼 추가
+            view = InitialWelcomeView(member.id)
+            await welcome_channel.send(embed=embed, view=view)
             
-            embed1.set_footer(text=f"환영합니다, {member.name}님!")
-            
-            await welcome_channel.send(embed=embed1, view=InitialWelcomeView(member.id))
-
-            # 5초 대기
+            # 두 번째 안내문과 활동 체크 시작 (5초 후)
             await asyncio.sleep(5)
-
-            # 두 번째 적응 확인 메시지
-            adaptation = MESSAGES["welcome_messages"]["adaptation_check"]
-            embed2 = discord.Embed(
-                title=adaptation["title"], 
-                description=adaptation["description"].format(member_mention=member.mention), 
-                color=int(adaptation["color"], 16)
-            )
-            embed2.add_field(
-                name=adaptation["field_name"], 
-                value="이 버튼은 본인만 사용할 수 있습니다.", 
-                inline=False
-            )
-            embed2.set_footer(text="서버 적응 상태를 확인해주세요!")
+            await send_second_guide_and_activity_check(member, welcome_channel)
             
-            await welcome_channel.send(embed=embed2, view=AdaptationCheckView(member.id))
-
         except Exception as e:
-            print(f"환영 메시지 생성 오류: {e}")
+            print(f"환영 프로세스 오류: {e}")
             import traceback
             traceback.print_exc()
+        
         finally:
-            # 처리 완료 후 제거
+            # 처리 완료 표시
             processing_members.discard(unique_identifier)
             creating_channels.discard(channel_name)
 
 @bot.event
-async def on_member_remove(member):
+async def on_message(message):
+    if message.author.bot:
+        return
+    
+    # 환영 채널에서의 활동 추적
+    if message.channel.name.startswith("환영-"):
+        member_id = message.author.id
+        member_activity[member_id] = {
+            'last_activity': time.time(),
+            'channel_id': message.channel.id
+        }
+        print(f"활동 감지: {message.author.name} - 메시지 전송")
+    
+    await bot.process_commands(message)
+
+@bot.event
+async def on_voice_state_update(member, before, after):
     if member.bot:
         return
-        
-    try:
-        guild = member.guild
-        channel_name = f"환영-{member.name}"
-        unique_identifier = f"{member.id}_{guild.id}"
-        
-        welcome_channel = discord.utils.get(guild.channels, name=channel_name)
-        if welcome_channel:
-            await welcome_channel.delete()
-            print(f"멤버 퇴장으로 환영 채널 삭제: {channel_name}")
-            
-        # 처리 중인 멤버 목록에서도 제거
-        processing_members.discard(unique_identifier)
-        creating_channels.discard(channel_name)
-        
-    except Exception as e:
-        print(f"멤버 퇴장 시 채널 삭제 오류: {e}")
+    
+    # 음성 채널 활동 추적
+    if after.channel:  # 음성 채널에 입장
+        member_activity[member.id] = {
+            'last_activity': time.time(),
+            'channel_id': after.channel.id
+        }
+        print(f"활동 감지: {member.name} - 음성 채널 입장")
 
-@bot.command(name="상태")
-async def status(ctx):
-    guild = ctx.guild
-    embed = discord.Embed(
-        title="🤖 봇 상태",
-        description="Discord 환영 봇의 현재 상태입니다.",
-        color=0x00ff00
-    )
-    embed.add_field(name="서버 이름", value=guild.name, inline=True)
-    embed.add_field(name="멤버 수", value=guild.member_count, inline=True)
-    embed.add_field(name="채널 수", value=len(guild.channels), inline=True)
-    embed.add_field(name="현재 처리 중인 멤버", value=len(processing_members), inline=True)
-    embed.add_field(name="생성 중인 채널", value=len(creating_channels), inline=True)
-    embed.add_field(name="봇 지연시간", value=f"{round(bot.latency * 1000)}ms", inline=True)
-    embed.add_field(name="배포 플랫폼", value="Render", inline=True)
-    embed.add_field(name="입장 기록", value=f"{len(member_join_history)}개 저장됨", inline=True)
-    
-    # 봇 권한 정보 추가
-    permissions = guild.me.guild_permissions
-    admin_status = "✅" if permissions.administrator else "❌"
-    nickname_status = "✅" if permissions.manage_nicknames else "❌"
-    embed.add_field(name="관리자 권한", value=admin_status, inline=True)
-    embed.add_field(name="닉네임 관리 권한", value=nickname_status, inline=True)
-    
-    await ctx.send(embed=embed)
+# Flask 앱 실행
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
 
-@bot.command(name="입장기록")
-async def join_history(ctx, user_id: int = None):
-    """특정 사용자의 입장 기록 확인 (관리자 전용)"""
-    # 도라도라미 역할 확인
-    doradori_role = discord.utils.get(ctx.guild.roles, name="도라도라미")
-    if not doradori_role or doradori_role not in ctx.author.roles:
-        await ctx.send("❌ 도라도라미 역할이 있는 사람만 사용할 수 있습니다.")
-        return
-    
-    if user_id is None:
-        await ctx.send("❌ 사용법: `!입장기록 <사용자ID>`")
-        return
-    
-    key = f"{user_id}_{ctx.guild.id}"
-    if key not in member_join_history:
-        await ctx.send("❌ 해당 사용자의 입장 기록이 없습니다.")
-        return
-    
-    history = member_join_history[key]
-    embed = discord.Embed(
-        title="📊 입장 기록",
-        description=f"<@{user_id}>님의 입장 기록",
-        color=0x3498db
-    )
-    
-    for i, timestamp in enumerate(history, 1):
-        time_str = discord.utils.format_dt(discord.utils.snowflake_time(int(timestamp * 1000)), style='F')
-        embed.add_field(
-            name=f"{i}번째 입장",
+# 봇 토큰으로 실행
+TOKEN = os.getenv('DISCORD_TOKEN')
+if not TOKEN:
+    print("❌ DISCORD_TOKEN 환경 변수가 설정되지 않았습니다.")
+    exit(1)
+
+bot.run(TOKEN)
