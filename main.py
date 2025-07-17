@@ -469,9 +469,9 @@ class AdaptationCheckView(discord.ui.View):
 
         msg = ""
         if result == "male":
-            msg += f"👦 {get_clean_name(member.display_name)} 님의 닉네임에 단팥빵 접두사가 추가되었습니다.\n"
+            msg += f"👦 {get_clean_name(member.display_name)} 님의 닉네임에 단팥빵이 추가되었습니다.\n"
         elif result == "female":
-            msg += f"👧 {get_clean_name(member.display_name)} 님의 닉네임에 메론빵 접두사가 추가되었습니다.\n"
+            msg += f"👧 {get_clean_name(member.display_name)} 님의 닉네임에 메론빵이 추가되었습니다.\n"
         elif result == "already_has_prefix":
             msg += "✅ 이미 접두사가 포함된 닉네임입니다.\n"
         elif result == "no_gender_role":
@@ -494,7 +494,7 @@ class AdaptationCheckView(discord.ui.View):
         else:
             msg += "⚠️ 일부 채널 접근 권한 부여에 실패했을 수 있습니다.\n"
 
-        msg += "🎉 환영 과정이 완료되었습니다!"
+        msg += "🎉 환영합니다!!"
         await interaction.response.send_message(msg, ephemeral=True)
 
 @bot.event
@@ -659,7 +659,7 @@ async def on_message(message):
         return
     
     # 환영 채널에서의 활동 추적
-    if message.channel.name.startswith("환영-"):
+    if message.channel.name.startswith("애정듬뿍-"):
         member_id = message.author.id
         member_activity[member_id] = {
             'last_activity': time.time(),
