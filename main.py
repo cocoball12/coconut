@@ -241,6 +241,16 @@ async def notify_admin_rejoin(guild, member):
 async def send_second_guide_and_activity_check(member, welcome_channel):
     """두 번째 안내문 전송 및 활동 체크 시작"""
     try:
+        # 멤버가 아직 서버에 있는지 확인
+        if not member or not member.guild:
+            print(f"멤버가 서버에 없음: {member}")
+            return
+        
+        # 채널이 아직 존재하는지 확인
+        if not welcome_channel:
+            print("환영 채널이 존재하지 않음")
+            return
+        
         # 두 번째 안내문 전송
         second_guide = MESSAGES["welcome_messages"]["second_guide"]
         embed = discord.Embed(
@@ -249,26 +259,28 @@ async def send_second_guide_and_activity_check(member, welcome_channel):
             color=int(second_guide["color"], 16)
         )
         
-        # 필드가 있다면 추가
-        if "fields" in second_guide:
+        # 필드가 있다면 추가 (안전하게 체크)
+        if "fields" in second_guide and second_guide["fields"]:
             for field in second_guide["fields"]:
                 embed.add_field(
                     name=field["name"],
                     value=field["value"],
-                    inline=field["inline"]
+                    inline=field.get("inline", False)
                 )
         
-        # 푸터가 있다면 추가
-        if "footer" in second_guide:
+        # 푸터가 있다면 추가 (안전하게 체크)
+        if "footer" in second_guide and second_guide["footer"]:
             embed.set_footer(text=second_guide["footer"])
         
         # 적응 확인 버튼 추가
         view = AdaptationCheckView(member.id)
-        await welcome_channel.send(embed=embed, view=view)
+        
+        # 메시지 전송
+        message = await welcome_channel.send(embed=embed, view=view)
         print(f"두 번째 안내문 전송 완료: {member.name}")
         
-        # 활동 체크 시작 (10초 + 7초 + 15초 = 32초 시스템)
-        await check_member_activity(member.id, member.guild.id)
+        # 활동 체크 시작 (간단한 버전)
+        asyncio.create_task(simple_activity_check(member, welcome_channel))
         
     except Exception as e:
         print(f"두 번째 안내문 전송 오류: {e}")
@@ -616,15 +628,20 @@ async def on_member_join(member):
                 color=int(welcome_msg["color"], 16)
             )
             
-            # 필드들 추가
-            for field in welcome_msg["fields"]:
-                embed.add_field(
-                    name=field["name"],
-                    value=field["value"],
-                    inline=field["inline"]
-                )
+            # 필드들 추가 (안전하게 체크)
+            if "fields" in welcome_msg and welcome_msg["fields"]:
+                for field in welcome_msg["fields"]:
+                    embed.add_field(
+                        name=field["name"],
+                        value=field["value"],
+                        inline=field.get("inline", False)
+                    )
             
-            embed.set_footer(text=welcome_msg["footer"])
+            # 푸터 추가 (안전하게 체크)
+            if "footer" in welcome_msg and welcome_msg["footer"]:
+                embed.set_footer(text=welcome_msg["footer"])
+            
+            # 썸네일 설정
             embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
             
             # 재입장 알림 추가
@@ -639,9 +656,16 @@ async def on_member_join(member):
             view = InitialWelcomeView(member.id)
             await welcome_channel.send(embed=embed, view=view)
             
+            print(f"첫 번째 안내문 전송 완료: {member.name}")
+            
             # 두 번째 안내문과 활동 체크 시작 (5초 후)
             await asyncio.sleep(5)
-            await send_second_guide_and_activity_check(member, welcome_channel)
+            
+            # 멤버가 아직 서버에 있는지 재확인
+            if member in member.guild.members:
+                await send_second_guide_and_activity_check(member, welcome_channel)
+            else:
+                print(f"멤버가 서버를 떠났음: {member.name}")
             
         except Exception as e:
             print(f"환영 프로세스 오류: {e}")
