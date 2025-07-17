@@ -245,19 +245,22 @@ async def send_second_guide_and_activity_check(member, welcome_channel):
         second_guide = MESSAGES["welcome_messages"]["second_guide"]
         embed = discord.Embed(
             title=second_guide["title"],
-            description=second_guide["description"],
+            description=second_guide["description"].format(member=member.mention),
             color=int(second_guide["color"], 16)
         )
         
-        # 필드들 추가
-        for field in second_guide["fields"]:
-            embed.add_field(
-                name=field["name"],
-                value=field["value"],
-                inline=field["inline"]
-            )
+        # 필드가 있다면 추가
+        if "fields" in second_guide:
+            for field in second_guide["fields"]:
+                embed.add_field(
+                    name=field["name"],
+                    value=field["value"],
+                    inline=field["inline"]
+                )
         
-        embed.set_footer(text=second_guide["footer"])
+        # 푸터가 있다면 추가
+        if "footer" in second_guide:
+            embed.set_footer(text=second_guide["footer"])
         
         # 적응 확인 버튼 추가
         view = AdaptationCheckView(member.id)
@@ -269,6 +272,8 @@ async def send_second_guide_and_activity_check(member, welcome_channel):
         
     except Exception as e:
         print(f"두 번째 안내문 전송 오류: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def check_member_activity(member_id, guild_id):
     """멤버 활동 체크 및 자동 강퇴 시스템"""
@@ -284,7 +289,7 @@ async def check_member_activity(member_id, guild_id):
         # 10초 대기 후 첫 번째 알림
         await asyncio.sleep(10)
         
-        welcome_channel = discord.utils.get(guild.channels, name=f"환영-{member.name}")
+        welcome_channel = discord.utils.get(guild.channels, name=f"애정듬뿍-{member.display_name}")
         if not welcome_channel:
             return
         
@@ -307,7 +312,7 @@ async def check_member_activity(member_id, guild_id):
         if not member:
             return
         
-        welcome_channel = discord.utils.get(guild.channels, name=f"환영-{member.name}")
+        welcome_channel = discord.utils.get(guild.channels, name=f"애정듬뿍-{member.display_name}")
         if not welcome_channel:
             return
         
@@ -391,6 +396,8 @@ async def check_member_activity(member_id, guild_id):
             
     except Exception as e:
         print(f"활동 체크 오류: {e}")
+        import traceback
+        traceback.print_exc()
 
 class InitialWelcomeView(discord.ui.View):
     def __init__(self, member_id):
@@ -415,8 +422,16 @@ class InitialWelcomeView(discord.ui.View):
 
     @discord.ui.button(label="보존", style=discord.ButtonStyle.success, emoji="✅")
     async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        member_name = interaction.channel.name.replace("환영-", "")
-        member = discord.utils.get(interaction.guild.members, name=member_name)
+        # 채널 이름에서 멤버 찾기 (애정듬뿍-{닉네임} 형태)
+        member_name = interaction.channel.name.replace("애정듬뿍-", "")
+        member = None
+        
+        # 서버 닉네임으로 찾기
+        for guild_member in interaction.guild.members:
+            if guild_member.display_name == member_name:
+                member = guild_member
+                break
+        
         if not member:
             await interaction.response.send_message("❌ 해당 멤버를 찾을 수 없습니다.", ephemeral=True)
             return
@@ -512,8 +527,8 @@ async def on_member_join(member):
     if is_returning_member:
         await notify_admin_rejoin(member.guild, member)
     
-    # 고유한 채널 식별자 생성
-    channel_name = f"환영-{member.name}"
+    # 고유한 채널 식별자 생성 (서버 닉네임 사용)
+    channel_name = f"애정듬뿍-{member.display_name}"
     unique_identifier = f"{member.id}_{member.guild.id}"
     
     # 채널 생성 락 사용하여 중복 생성 방지
@@ -543,7 +558,13 @@ async def on_member_join(member):
             settings = MESSAGES["settings"]
             
             print(f"새 멤버 입장: {member.name} (ID: {member.id}) - 재입장: {is_returning_member}")
+            print(f"생성할 채널 이름: {channel_name}")
 
+            # 환영 카테고리 확인/생성
+            welcome_cat = discord.utils.get(guild.categories, name=settings["welcome_category"])
+            if not welcome_cat:
+                welcome_cat = await guild.create_category(settings["welcome_category"])
+                print(f"환영 카테고리 생성: {settings['welcome_category']}")
             # 환영 카테고리 확인/생성
             welcome_cat = discord.utils.get(guild.categories, name=settings["welcome_category"])
             if not welcome_cat:
