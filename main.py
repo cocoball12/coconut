@@ -95,7 +95,7 @@ async def change_nickname_with_gender_prefix(member):
         
         # 이미 접두사가 있는지 확인
         if has_gender_prefix(member.display_name):
-            print("✅ 이미 접두사가 있음")
+            print("✅ 이미 적용됨됨")
             return "already_has_prefix"
         
         # 성별 역할 가져오기
@@ -210,13 +210,7 @@ async def grant_all_channel_access(member):
         return False
 
 async def notify_admin_rejoin(guild, member):
-    """관리자에게 재입장 알림"""
-    try:
-        # ㅇㄹㅇㄹ 역할을 가진 관리자들에게 DM 발송
-        admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
-        if not admin_role:
-            return
-        
+   
         embed = discord.Embed(
             title="🔄 재입장 알림",
             description=f"**{member.mention}** ({member.name})님이 재입장했습니다.",
@@ -226,14 +220,6 @@ async def notify_admin_rejoin(guild, member):
         embed.add_field(name="사용자 정보", value=f"ID: {member.id}\n계정 생성일: {member.created_at.strftime('%Y-%m-%d')}", inline=False)
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
         
-        # 관리자들에게 DM 발송
-        for admin in admin_role.members:
-            try:
-                await admin.send(embed=embed)
-            except discord.Forbidden:
-                print(f"관리자 {admin.name}에게 DM을 보낼 수 없습니다.")
-            except Exception as e:
-                print(f"관리자 DM 발송 오류: {e}")
                 
     except Exception as e:
         print(f"재입장 알림 오류: {e}")
