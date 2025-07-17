@@ -198,7 +198,7 @@ class InitialWelcomeView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         admin_role = discord.utils.get(interaction.guild.roles, name="ㅇㄹㅇㄹ")
         if not admin_role or admin_role not in interaction.user.roles:
-            await interaction.response.send_message("❌ ㅇㄹㅇㄹ 역할이 있는 사람만 사용 가능합니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 관리자가 있는 사람만 사용 가능합니다.", ephemeral=True)
             return False
         return True
 
@@ -237,11 +237,11 @@ class AdaptationCheckView(discord.ui.View):
 
         msg = ""
         if result == "male":
-            msg += "👦 단팥빵 접두사 추가!\n"
+            msg += "👦 단팥빵  추가!\n"
         elif result == "female":
-            msg += "👧 메론빵 접두사 추가!\n"
+            msg += "👧 메론빵  추가!\n"
         elif result == "already_has_prefix":
-            msg += "✅ 이미 접두사가 있음\n"
+            msg += "✅ 이미 추가되어어 있음\n"
         else:
             msg += f"⚠️ 닉네임 변경 상태: {result}\n"
 
@@ -348,7 +348,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    if message.channel.name.startswith("애정듬뿍-"):
+    if message.channel.name.startswith("관리자 애정듬뿍-"):
         member_activity[message.author.id] = {
             'last_activity': time.time(),
             'channel_id': message.channel.id
