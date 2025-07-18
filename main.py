@@ -198,17 +198,38 @@ class InitialWelcomeView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         admin_role = discord.utils.get(interaction.guild.roles, name="ㅇㄹㅇㄹ")
         if not admin_role or admin_role not in interaction.user.roles:
-            await interaction.response.send_message("❌ 관리자만 사용 가능합니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 관리자가 있는 사람만 사용 가능합니다.", ephemeral=True)
             return False
         return True
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("✅ 채널 삭제 ", ephemeral=True)
+        await interaction.response.send_message("✅ 채널 삭제 요청됨", ephemeral=True)
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
-    @discord.ui.button(label="유지지", style지", style=discord.ButtonStyle.success, emoji="✅")
+    @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
+    async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("✅ 모든 채널 접근 권한 부여 완료.", ephemeral=True)
+
+class AdaptationCheckView(discord.ui.View):
+    def __init__(self, member_id):
+        super().__init__(timeout=None)
+        self.member_id = member_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message("❌ 본인만 사용할 수 있습니다.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("✅ 채널 삭제 요청됨", ephemeral=True)
+        await asyncio.sleep(3)
+        await interaction.channel.delete()
+
+    @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
     async def adaptation_complete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
         result = await change_nickname_with_gender_prefix(member)
@@ -224,7 +245,7 @@ class InitialWelcomeView(discord.ui.View):
         else:
             msg += f"⚠️ 닉네임 변경 상태: {result}\n"
 
-        msg += "✅ 완료" if access else "⚠️ 실패"
+        msg += "✅ 모든 채널 권한 부여 완료" if access else "⚠️ 일부 채널 권한 실패"
 
         await interaction.response.send_message(msg, ephemeral=True)
 
@@ -306,12 +327,16 @@ async def on_member_join(member):
             if is_returning_member:
                 embed.add_field(
                     name="🔄 재입장 알림",
-                    value="재입장.",
+                    value="이전에 참여한 기록이 있습니다.",
                     inline=False
                 )
 
             view = InitialWelcomeView(member.id)
             await welcome_channel.send(embed=embed, view=view)
+
+            # 추가 안내문을 별도 메시지로 전송
+            additional_message = "심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 걍 딴 서버나 가라 그런 새끼 받아주는 서버 아님 <@&ㅇㄹㅇㄹ>"
+            await welcome_channel.send(additional_message)
 
             await asyncio.sleep(5)
             if member in member.guild.members:
