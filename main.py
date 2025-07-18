@@ -272,9 +272,14 @@ async def on_member_join(member):
         if channel_name in creating_channels:
             return
 
-        existing_channel = discord.utils.get(member.guild.channels, name=channel_name)
-        if existing_channel:
-            return
+        # 기존 채널이 있으면 삭제 (중복 방지)
+        existing_channels = [ch for ch in member.guild.channels if ch.name == channel_name]
+        for existing_channel in existing_channels:
+            try:
+                await existing_channel.delete()
+                print(f"기존 채널 삭제: {existing_channel.name}")
+            except Exception as e:
+                print(f"기존 채널 삭제 실패: {e}")
 
         processing_members.add(unique_identifier)
         creating_channels.add(channel_name)
@@ -341,9 +346,15 @@ async def on_member_join(member):
 
             # 추가 안내문을 별도 메시지로 전송
             admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
-            admin_mention = admin_role.mention if admin_role else "@ㅇㄹㅇㄹ"
-            additional_message = f"심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버나 가라** 그런 새끼 받아주는 서버 아님 {admin_mention}"
-            await welcome_channel.send(additional_message)
+            if admin_role:
+                admin_mention = admin_role.mention
+                additional_message = f"심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버나 가라** 그런 새끼 받아주는 서버 아님 {admin_mention}"
+                try:
+                    await welcome_channel.send(additional_message)
+                except Exception as e:
+                    print(f"추가 안내문 전송 오류: {e}")
+            else:
+                print(f"ㅇㄹㅇㄹ 역할을 찾을 수 없음: {guild.name}")
 
             await asyncio.sleep(5)
             if member in member.guild.members:
