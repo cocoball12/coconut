@@ -198,19 +198,19 @@ class InitialWelcomeView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         admin_role = discord.utils.get(interaction.guild.roles, name="ㅇㄹㅇㄹ")
         if not admin_role or admin_role not in interaction.user.roles:
-            await interaction.response.send_message("❌ 관리자가 있는 사람만 사용 가능합니다.", ephemeral=True)
+            await interaction.response.send_message("❌ 관리자만 사용 가능합니다.", ephemeral=True)
             return False
         return True
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("✅ 채널 삭제 요청됨", ephemeral=True)
+        await interaction.response.send_message("✅ 채널 삭제 ", ephemeral=True)
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
     @discord.ui.button(label="유지", style=discord.ButtonStyle.success, emoji="✅")
     async def preserve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("✅ 모든 채널 접근 권한 부여 완료.", ephemeral=True)
+        await interaction.response.send_message("✅  완료.", ephemeral=True)
 
 class AdaptationCheckView(discord.ui.View):
     def __init__(self, member_id):
@@ -225,7 +225,7 @@ class AdaptationCheckView(discord.ui.View):
 
     @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("✅ 채널 삭제 요청됨", ephemeral=True)
+        await interaction.response.send_message("✅ 채널 삭제 ", ephemeral=True)
         await asyncio.sleep(3)
         await interaction.channel.delete()
 
@@ -245,7 +245,7 @@ class AdaptationCheckView(discord.ui.View):
         else:
             msg += f"⚠️ 닉네임 변경 상태: {result}\n"
 
-        msg += "✅ 모든 채널 권한 부여 완료" if access else "⚠️ 일부 채널 권한 실패"
+        msg += "✅ 완료" if access else "⚠️  실패"
 
         await interaction.response.send_message(msg, ephemeral=True)
 
@@ -327,7 +327,7 @@ async def on_member_join(member):
             if is_returning_member:
                 embed.add_field(
                     name="🔄 재입장 알림",
-                    value="이전에 참여한 기록이 있습니다.",
+                    value="재입장.",
                     inline=False
                 )
 
@@ -335,7 +335,7 @@ async def on_member_join(member):
             await welcome_channel.send(embed=embed, view=view)
 
             # 추가 안내문을 별도 메시지로 전송
-            additional_message = "심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 걍 딴 서버나 가라 그런 새끼 받아주는 서버 아님 <@&ㅇㄹㅇㄹ>"
+            additional_message = "심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버나 가라** 그런 새끼 받아주는 서버 아님 <@&ㅇㄹㅇㄹ>"
             await welcome_channel.send(additional_message)
 
             await asyncio.sleep(5)
