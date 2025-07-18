@@ -297,6 +297,11 @@ async def on_member_join(member):
             admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
             if admin_role:
                 overwrites[admin_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            
+            # ㅇㄹㅇㄹ 역할이 없는 사람들이 채널을 볼 수 없도록 설정
+            for role in guild.roles:
+                if role.name != "ㅇㄹㅇㄹ" and role != guild.default_role:
+                    overwrites[role] = discord.PermissionOverwrite(read_messages=False)
 
             welcome_channel = await guild.create_text_channel(
                 channel_name,
@@ -335,7 +340,9 @@ async def on_member_join(member):
             await welcome_channel.send(embed=embed, view=view)
 
             # 추가 안내문을 별도 메시지로 전송
-            additional_message = "심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버나 가라** 그런 새끼 받아주는 서버 아님 @ㅇㄹㅇㄹ"
+            admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
+            admin_mention = admin_role.mention if admin_role else "@ㅇㄹㅇㄹ"
+            additional_message = f"심심해서 들어온거면 관리진들이 불러줄 때 빨리 답장하고 부르면 음챗방 오셈\n답도 안하고 활동 안할거면 **걍 딴 서버나 가라** 그런 새끼 받아주는 서버 아님 {admin_mention}"
             await welcome_channel.send(additional_message)
 
             await asyncio.sleep(5)
