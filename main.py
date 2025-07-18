@@ -292,21 +292,21 @@ async def on_member_join(member):
             if not welcome_cat:
                 welcome_cat = await guild.create_category(settings["welcome_category"])
 
-            # 애정듬뿍 채널 권한 설정 - 본인과 ㅇㄹㅇㄹ 역할만 볼 수 있음
+            # 애정듬뿍 채널 권한 설정 - 수정된 부분
+            # 기본 역할은 접근 불가, 본인과 봇, 관리자만 접근 가능
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(read_messages=False),
                 guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True),
                 member: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
 
+            # 관리자 역할 권한 추가
             admin_role = discord.utils.get(guild.roles, name="ㅇㄹㅇㄹ")
             if admin_role:
                 overwrites[admin_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            
-            # ㅇㄹㅇㄹ 역할이 없는 사람들이 채널을 볼 수 없도록 설정
-            for role in guild.roles:
-                if role.name != "ㅇㄹㅇㄹ" and role != guild.default_role:
-                    overwrites[role] = discord.PermissionOverwrite(read_messages=False)
+
+            # 기존의 모든 역할에 대한 권한 설정 제거 (100개 제한 초과 방지)
+            # 기본 역할을 read_messages=False로 설정했으므로 다른 역할들은 자동으로 접근 불가
 
             welcome_channel = await guild.create_text_channel(
                 channel_name,
